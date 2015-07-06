@@ -1,0 +1,17 @@
+{
+  "name": "audio-scope-js",
+  "version": "0.0.1",
+  "description": "RTTY decoder based on navigator.getUserMedia and FFT implementation by Nick Jones (https://github.com/dntj/jsfft)",
+  "repository": {
+    "type": "git",
+    "url": "git://github.com/keijokapp/rtty-decoder-js"
+  },
+  "devDependencies": {
+    "babelify": "~5.0.3",
+    "browserify": "^6.3.3",
+    "gulp": "~3.8.10",
+    "gulp-rename": "^1.2.0",
+    "watchify": "^2.1.1",
+    "vinyl-source-stream": "^1.0.0"
+  }
+}

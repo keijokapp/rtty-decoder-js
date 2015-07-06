@@ -1,0 +1,57 @@
+<!DOCTYPE html5>
+<html>
+<head>
+	<meta charset="utf-8">
+	<title>RTTY decoder</title>
+	<style>
+body {
+  font-family: sans-serif;
+}
+
+canvas {
+  background-color: #eee;
+}
+	</style>
+	
+	<script type="text/javascript">
+	var WIDTH = 1024,
+		HEIGHT = 128;
+
+	var canvasOriginal, canvasFFT;
+
+	window.addEventListener('DOMContentLoaded', function() {
+		canvasOriginal = document.getElementById('original');
+		canvasFFT = document.getElementById('fft');	
+
+		canvasOriginal.width = canvasFFT.width = WIDTH;
+		canvasOriginal.height = canvasFFT.height = HEIGHT;
+		
+		txtResult = document.getElementById('result');
+		txtResult.style.width = WIDTH + 'px';
+	});
+	</script>
+	<script type="text/javascript" src="dist/app.js"></script>
+</head>
+<body>
+	<div class="panel">
+		<div class="canvasContainer">
+			<canvas id="original"></canvas>
+		</div>
+		<div class="canvasContainer">
+			<canvas id="fft"></canvas>
+		</div>
+		<div>
+			<textarea id="result" rows="13">
+baud: 45
+center: 1000Hz
+shift: 170 Hz
+bits: 5
+stopbits: 2
+parity: even
+order: LSB first
+
+</textarea>
+		</div>
+	</div>
+</body>
+</html>
