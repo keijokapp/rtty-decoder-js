@@ -1,8 +1,10 @@
 
 'use strict';
 
-import FFT, { FFTData } from './fft';
 
+import FFT from './fft';
+import FFTData from './FFTData';
+import Baudot from './Baudot'
 
 function drawToCanvas(canvas, data) {
 	if(canvas === null) throw undefined;
@@ -31,9 +33,6 @@ function drawToCanvas(canvas, data) {
     context.stroke()
 }
 
-
-
-
 const SAMPLES = 1024;
 const SAMPLERATE = 48000;
 const FREQ0 = 1085;
@@ -41,16 +40,12 @@ const FREQ1 = 915;
 const BPS = 45;
 const CHUNKSPERBIT = 4;
 
-var RTTYMode = { letters: 1, symbols: 2 };
-var mode = RTTYMode.letters;
-var RTTYLetters = [ "<", "E", "\n", "A", " ", "S", "I", "U", "\n", "D", "R", "J", "N", "F", "C", "K", "T", "Z", "L", "W", "H", "Y", "P", "Q", "O", "B", "G", "^", "M", "X", "V", "^" ];
-var RTTYSymbols = [ "<", "3", "\n", "-", " ", ",", "8", "7", "\n", "$", "4", "#", ",", ".", ":", "(", "5", "+", ")", "2", ".", "6", "0", "1", "9", "7", ".", "^", ".", "/", "=", "^" ];
-
-
+var baudot = new Baudot;
 var oldChunkVal = 0;
 
 var samplesPerChunk;
 var binOfFreq0, binOfFreq1;
+
 
 function start(sampleRate) {
 	samplesPerChunk = Math.round(sampleRate / BPS / CHUNKSPERBIT);
@@ -149,57 +144,32 @@ function waitForStartBit() {
 }
 
 function run() {
-	var byteResult = 0;
-	var byteResultp = 1;
-	
 	return waitForStartBit()
-	
-	// reading 7 more bits
-	.then(function callee() {
-		return getBitDPLL().then(function(bitResult) {
-			if(bitResult == -1) {
-				byteResult = -1;
-				return;
-			}
-		
-			switch(byteResultp) {
-			case 6: // stop bit 1
-				break;
-			case 7: // stop bit 2
-				break;
-			default:
-				byteResult += bitResult << (byteResultp-1);
-			}
-			
-			if(++byteResultp < 8) {
-				return Promise.resolve().then(callee);
-			} else {
-		//		console.log(byteResult.toString(2));
-			}
+		.then(function() { return { byte: 0, pointer: 0 }; })
+		.then(function callee(byte) {
+			return getBitDPLL().then(function(bit) {
+				if(bit == -1) return -1;
+				
+				switch(byte.pointer) {
+				case 5: // stop bit 1
+					break;
+				case 6: // stop bit 2
+					break;
+				default:
+					byte.byte += bit << byte.pointer;
+				}
+
+				if(++byte.pointer < 7)
+					return Promise.resolve(byte).then(callee);
+				return byte.byte;
+			})
 		})
-	})
-	.then(function() {
-		if(byteResult === -1) return;
-		
-		switch (byteResult) {
-		case 0x1F:
-			mode = RTTYMode.letters;
-			break;
-		case 0x1B:
-			mode = RTTYMode.symbols;
-			break;
-		default:
-			switch(mode) {
-			case RTTYMode.letters:
-				txtResult.value += RTTYLetters[byteResult]
-				break;
-			case RTTYMode.symbols:
-				txtResult.value += RTTYSymbols[byteResult]
-				break;
-			}
-		}
-	})
-	.then(run);
+		.then(function(byte) {
+			if(byte === -1) return;
+			txtResult.value += baudot.char(byte) || '';
+			txtResult.scrollTop = txtResult.scrollHeight;
+		})
+		.then(run);
 }
 
 
@@ -220,6 +190,9 @@ function readChunk() {
 
 window.addEventListener('load', function() {
 	var onaudioprogress = function onaudioprogress(e) {
+		if(chunks.length > 5) return; // buffer overflow
+	
+	
 		var leftChannel = e.inputBuffer.getChannelData(0);
 		var rightChannel = e.inputBuffer.getChannelData(1);
 
@@ -243,7 +216,6 @@ window.addEventListener('load', function() {
 		}
 
 		console.assert(inputResolve);
-		console.assert(chunks.length < 10);
 		
 		if (inputResolve) {
 			var resolve = inputResolve;

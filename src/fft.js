@@ -6,13 +6,12 @@
 'use strict';
 
 import FFTData from './FFTData.js';
-export { FFTData };
 
 var PI = Math.PI,
-    SQRT1_2 = Math.SQRT1_2,
-    sqrt = Math.sqrt,
-    cos = Math.cos,
-    sin = Math.sin;
+	SQRT1_2 = Math.SQRT1_2,
+	sqrt = Math.sqrt,
+	cos = Math.cos,
+	sin = Math.sin;
 
 export default function FFT(input, inverse) {
 	var n = input.length;

@@ -7,10 +7,6 @@
 
 import FFT from './fft';
 
-var DefaultArrayType = Float32Array,
-    sqrt = Math.sqrt,
-	sqr = function(number) { return Math.pow(number, 2) };
-
 export default function FFTData(other, opt_array_type){
 	if(other && other.hasOwnProperty && other.hasOwnProperty('real') && other.hasOwnProperty('imag')) {
 		// Copy constuctor.
@@ -18,7 +14,7 @@ export default function FFTData(other, opt_array_type){
 		this.real = new this.ArrayType(other.real);
 		this.imag = new this.ArrayType(other.imag)
 	} else {
-		this.ArrayType = opt_array_type || DefaultArrayType;
+		this.ArrayType = opt_array_type || Float32Array;
 		// other can be either an array or a number.
 		this.real = new this.ArrayType(other);
 		this.imag = new this.ArrayType(this.real.length);
@@ -51,7 +47,7 @@ Object.defineProperty(FFTData.prototype, 'map', {
             this.imag[i] = c_value.imag;
         }
 
-        return this
+        return this;
     }
 });
 
@@ -61,7 +57,7 @@ Object.defineProperty(FFTData.prototype, 'forEach', {
         for (var i = 0, n = this.length, c_value = {}; i < n; i++) {
             c_value.real = this.real[i];
             c_value.imag = this.imag[i];
-            iterator(c_value, i, n)
+            iterator(c_value, i, n);
         }
     }
 });
