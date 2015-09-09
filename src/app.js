@@ -8,29 +8,31 @@ import Baudot from './Baudot'
 
 function drawToCanvas(canvas, data) {
 	if(canvas === null) throw undefined;
-    var context = canvas.getContext('2d');
+	
+	var context = canvas.getContext('2d');
 
 	context.clearRect(0, 0, canvas.width, canvas.height);	
 	
-    context.strokeStyle = 'red';
-    context.beginPath();
-    for(var i = 0; i <  data.imag.length; i++) {
+	context.strokeStyle = 'red';
+	context.beginPath();
+	for(var i = 0; i <  data.imag.length; i++) {
 		context.lineTo(
 			i * canvas.width / data.imag.length,
 			canvas.height/2 - (canvas.height/2 * data.imag[i])
 		)
 	}
-    context.stroke();
+	context.stroke();
 
-    context.strokeStyle = 'blue';
-    context.beginPath();
-    for(var i = 0; i < data.real.length; i++) {
+	context.strokeStyle = 'blue';
+	context.beginPath();
+	for(var i = 0; i < data.real.length; i++) {
 		context.lineTo(
 			i * canvas.width / data.real.length,
 			canvas.height/2 - (canvas.height/2 * data.real[i])
 		)
 	}
-    context.stroke()
+	
+ 	context.stroke();
 }
 
 const SAMPLES = 1024;
@@ -46,7 +48,6 @@ var oldChunkVal = 0;
 var samplesPerChunk;
 var binOfFreq0, binOfFreq1;
 
-
 function start(sampleRate) {
 	samplesPerChunk = Math.round(sampleRate / BPS / CHUNKSPERBIT);
 	binOfFreq0 = Math.round(FREQ0/SAMPLERATE * samplesPerChunk);
@@ -60,28 +61,22 @@ function start(sampleRate) {
 function demodulator() {
 	return readChunk()
 		.then(function(fftData) {
-			drawToCanvas(window.canvasOriginal, fftData)
+			drawToCanvas(window.canvasOriginal, fftData);
 
 			fftData = fftData.FFT();
 
 			drawToCanvas(window.canvasFFT, fftData)
 
 			var real0 = fftData.real[binOfFreq0],
-				imag0 = fftData.imag[binOfFreq0],
-				real1 = fftData.real[binOfFreq1],
-				imag1 = fftData.imag[binOfFreq1];
-			var PWRFreq0 = Math.sqrt(real0 * real0 + imag0 * imag0);
-			var PWRFreq1 = Math.sqrt(real1 * real1 + imag1 * imag1);
+			    imag0 = fftData.imag[binOfFreq0],
+			    real1 = fftData.real[binOfFreq1],
+			    imag1 = fftData.imag[binOfFreq1];
+			var PWRFreq0 = Math.sqrt(real0 * real0 + imag0 * imag0),
+			    PWRFreq1 = Math.sqrt(real1 * real1 + imag1 * imag1);
 
-			if (PWRFreq0 < PWRFreq1) {
-//				console.log(1)
-				return 1;
-			} else if(PWRFreq0 > PWRFreq1) {
-//				console.log(0)
-				return 0;
-			} else {
-				return -1;
-			}
+			if(PWRFreq0 < PWRFreq1) return 1;
+			else if(PWRFreq0 > PWRFreq1) return 0;
+			else return -1;
 		})
 }
 
@@ -116,53 +111,53 @@ function getBitDPLL() {
 
 function waitForStartBit() {
 	return Promise.resolve()
+		.then(function callee() {	
+			var promise = Promise.resolve()
 
-	.then(function callee() {	
-		var promise = Promise.resolve()
-
-		.then(demodulator)
-		.then(function callee(bitResult) {
-			if(bitResult == 0 || bitResult == -1)
-				return demodulator().then(callee);
+			.then(demodulator)
+			.then(function callee(bitResult) {
+				if(bitResult == 0 || bitResult == -1)
+					return demodulator().then(callee);
+			})
+		
+			.then(demodulator)
+			.then(function callee(bitResult) {
+				if(bitResult == 1 || bitResult == -1)
+					return demodulator().then(callee);
+			})
+		
+			for(var i = 0; i < CHUNKSPERBIT/2; i++) {
+				promise = promise.then(demodulator)
+			}
+		
+			return promise.then(function(bitResult) {
+				if(bitResult === 0);
+				else return Promise.resolve().then(callee);
+			});
 		})
-		
-		.then(demodulator)
-		.then(function callee(bitResult) {
-			if(bitResult == 1 || bitResult == -1)
-				return demodulator().then(callee);
-		})
-		
-		for(var i = 0; i < CHUNKSPERBIT/2; i++) {
-			promise = promise.then(demodulator)
-		}
-		
-		return promise.then(function(bitResult) {
-			if(bitResult === 0);
-			else return Promise.resolve().then(callee);
-		});
-	})
 }
 
 function run() {
 	return waitForStartBit()
 		.then(function() { return { byte: 0, pointer: 0 }; })
 		.then(function callee(byte) {
-			return getBitDPLL().then(function(bit) {
-				if(bit == -1) return -1;
+			return getBitDPLL()
+				.then(function(bit) {
+					if(bit == -1) return -1;
 				
-				switch(byte.pointer) {
-				case 5: // stop bit 1
-					break;
-				case 6: // stop bit 2
-					break;
-				default:
-					byte.byte += bit << byte.pointer;
-				}
+					switch(byte.pointer) {
+					case 5: // stop bit 1
+						break;
+					case 6: // stop bit 2
+						break;
+					default:
+						byte.byte += bit << byte.pointer;
+					}
 
-				if(++byte.pointer < 7)
-					return Promise.resolve(byte).then(callee);
-				return byte.byte;
-			})
+					if(++byte.pointer < 7)
+						return Promise.resolve(byte).then(callee);
+					return byte.byte;
+				})
 		})
 		.then(function(byte) {
 			if(byte === -1) return;
@@ -179,12 +174,11 @@ var inputResolve = null;
 function readChunk() {
 	if(chunks[0] && chunks[0].end === samplesPerChunk) {
 		var chunk = chunks.shift().data;
-		return Promise.resolve(chunk)
+		return Promise.resolve(chunk);
 	} else {
-		return new Promise(function(resolve) {
+		return (new Promise(function(resolve) {
 			inputResolve = resolve;
-		})
-		.then(readChunk);
+		})).then(readChunk);
 	}
 }
 
