@@ -1,8 +1,3 @@
-// unused file
-
-
-'use strict';
-
 import FFT, { FFTData } from './fft';
 import AudioInput from './AudioInput';
 

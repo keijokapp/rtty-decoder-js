@@ -4,6 +4,11 @@
 	<meta charset="utf-8">
 	<title>RTTY decoder</title>
 	<style>
+html, div, body {
+	padding: 0;
+	border: 0;
+	margin: 0;
+}
 body {
   font-family: sans-serif;
 }
@@ -11,47 +16,48 @@ body {
 canvas {
   background-color: #eee;
 }
+
+canvas {
+	display: inline-block;
+}
 	</style>
-	
-	<script type="text/javascript">
-	var WIDTH = 1024,
-		HEIGHT = 128;
-
-	var canvasOriginal, canvasFFT;
-
-	window.addEventListener('DOMContentLoaded', function() {
-		canvasOriginal = document.getElementById('original');
-		canvasFFT = document.getElementById('fft');	
-
-		canvasOriginal.width = canvasFFT.width = WIDTH;
-		canvasOriginal.height = canvasFFT.height = HEIGHT;
-		
-		txtResult = document.getElementById('result');
-		txtResult.style.width = WIDTH + 'px';
-	});
-	</script>
-	<script type="text/javascript" src="dist/app.js"></script>
 </head>
 <body>
-	<div class="panel">
-		<div class="canvasContainer">
-			<canvas id="original"></canvas>
-		</div>
-		<div class="canvasContainer">
-			<canvas id="fft"></canvas>
-		</div>
-		<div>
-			<textarea id="result" rows="13">
+	<div class="canvasContainer">
+		<canvas id="original" class="full-width"></canvas>
+	</div>
+	<div class="canvasContainer">
+		<canvas id="waterfall" class="full-width"></canvas>
+	</div>
+	<div class="canvasContainer">
+		<canvas id="biquad-mark" class="half-width"></canvas>
+		<canvas id="biquad-space" class="half-width"></canvas>
+	</div>
+	<div class="canvasContainer">
+		<canvas id="addition" class="full-width"></canvas>
+	</div>
+
+	<div class="canvasContainer">
+		<canvas id="lowpass" class="full-width"></canvas>
+	</div>
+<!--	<div>
+		<form id="conf">
+			cFrq: <input type="number" id="cfrq" style="width: 60px" value="2125" /> shift: <input type="number" id="shift" style="width: 60px" value="170" /> 
+		</form>
+	</div>
+	<div>
+		<textarea id="result" rows="13">
 baud: 45
 center: 1000Hz
 shift: 170 Hz
 bits: 5
 stopbits: 2
 parity: even
-order: LSB first
-
-</textarea>
-		</div>
+order: LSB first</textarea>
 	</div>
+	<div>
+<textarea id="message"></textarea>-->
+	</div>
+	<script type="text/javascript" src="app.js"></script>
 </body>
 </html>

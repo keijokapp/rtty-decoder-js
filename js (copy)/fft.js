@@ -15,7 +15,7 @@ var PI = Math.PI,
 
 export default function FFT(input, inverse) {
 	var n = input.length;
-    return n & (n - 1) ? FFT_Recursive(input, inverse) : FFT_2_Iterative(input, inverse);
+	return n & (n - 1) ? FFT_Recursive(input, inverse) : FFT_2_Iterative(input, inverse);
 }
 
 function FFT_Recursive(input, inverse) {

@@ -1,6 +1,4 @@
-
 'use strict';
-
 
 import FFT from './fft';
 import FFTData from './FFTData';
