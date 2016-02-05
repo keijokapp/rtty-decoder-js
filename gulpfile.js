@@ -3,32 +3,37 @@ var fs = require('fs');
 var browserify = require('browserify');
 var watchify = require('watchify');
 var babelify = require('babelify');
-var source = require('vinyl-source-stream');
 
-var bundler;
-
-appBundler = watchify(browserify('./src/app.js', watchify));
-
-function bundle() {
-  return bundler
-    .transform(babelify)
-    .bundle()
-    .on('error', function(err) { console.log('Error: ' + err.message); })
-    .pipe(source(config.outputFile))
-    .pipe(gulp.dest(config.outputDir))
-}
+var bundler = watchify(
+	browserify({
+		entries: './src/app.js',
+		debug: true,
+	}, watchify)
+	.transform(babelify.configure({
+		presets: [
+			'es2015',
+			'stage-0'
+		]
+	}))
+);
 
 gulp.task('build', function() {
-  return appBundler
-    .transform(babelify)
-    .bundle()
-    .on('error', function(err) { console.log('Error: ' + err.message); })
-    .pipe(source('app.js'))
-    .pipe(gulp.dest('dist'))
+	return bundler
+		.bundle()
+		.on('error', function(err) {
+			console.log('Error:', err.message);
+			this.emit('end');
+		})
+		.pipe(fs.createWriteStream("./dist/app.js"));
 });
 
-gulp.task('watch', ['build' ], function() {
-  appBundler.on('update', function() {
-    gulp.start('build')
-  });
+gulp.task('watch', [ 'build' ], function() {
+	bundler.on('update', function() {
+		gulp.start('build');
+	});
 });
+
+gulp.task('default', function() {
+	gulp.start('watch');
+});
+

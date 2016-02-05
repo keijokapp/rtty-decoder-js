@@ -1,241 +1,253 @@
-
 'use strict';
 
-
-import FFT from './fft';
-import FFTData from './FFTData';
+import 'babel-regenerator-runtime';
 import Baudot from './Baudot'
 
-function drawToCanvas(canvas, data) {
-	if(canvas === null) throw undefined;
-	
-	var context = canvas.getContext('2d');
-
-	context.clearRect(0, 0, canvas.width, canvas.height);	
-	
-	context.strokeStyle = 'red';
-	context.beginPath();
-	for(var i = 0; i <  data.imag.length; i++) {
-		context.lineTo(
-			i * canvas.width / data.imag.length,
-			canvas.height/2 - (canvas.height/2 * data.imag[i])
-		)
-	}
-	context.stroke();
-
-	context.strokeStyle = 'blue';
-	context.beginPath();
-	for(var i = 0; i < data.real.length; i++) {
-		context.lineTo(
-			i * canvas.width / data.real.length,
-			canvas.height/2 - (canvas.height/2 * data.real[i])
-		)
-	}
-	
- 	context.stroke();
-}
-
-const SAMPLES = 1024;
+const SAMPLES = 512;
 const SAMPLERATE = 48000;
-const FREQ0 = 1085;
-const FREQ1 = 915;
-const BPS = 45;
-const CHUNKSPERBIT = 4;
+const BPS = 45.45;
+
+var xvBP0, yvBP0, xvBP1, yvBP1, xvLP, yvLP;
+var samplesPerBit;
+var DPLLOldVal = 0;
+var DPLLBitPhase = 0;
 
 var baudot = new Baudot;
-var oldChunkVal = 0;
 
-var samplesPerChunk;
-var binOfFreq0, binOfFreq1;
+var samples = [];
 
-function start(sampleRate) {
-	samplesPerChunk = Math.round(sampleRate / BPS / CHUNKSPERBIT);
-	binOfFreq0 = Math.round(FREQ0/SAMPLERATE * samplesPerChunk);
-	binOfFreq1 = Math.round(FREQ1/SAMPLERATE * samplesPerChunk);
-
-	run();
-}
-
-
-
-function demodulator() {
-	return readChunk()
-		.then(function(fftData) {
-			drawToCanvas(window.canvasOriginal, fftData);
-
-			fftData = fftData.FFT();
-
-			drawToCanvas(window.canvasFFT, fftData)
-
-			var real0 = fftData.real[binOfFreq0],
-			    imag0 = fftData.imag[binOfFreq0],
-			    real1 = fftData.real[binOfFreq1],
-			    imag1 = fftData.imag[binOfFreq1];
-			var PWRFreq0 = Math.sqrt(real0 * real0 + imag0 * imag0),
-			    PWRFreq1 = Math.sqrt(real1 * real1 + imag1 * imag1);
-
-			if(PWRFreq0 < PWRFreq1) return 1;
-			else if(PWRFreq0 > PWRFreq1) return 0;
-			else return -1;
-		})
-}
-
-function getBitDPLL() {
-	var chunkPhaseChanged = false;
-	var chunkVal = -1;
-	var chunkPhase = 0;
-
-	return Promise.resolve()
-		.then(function callee() {
-			if(chunkPhase < CHUNKSPERBIT)
-				return demodulator().then(function(_chunkVal) {
-					chunkVal = _chunkVal;
-					
-					if(chunkVal === -1) { return -1; }
-
-					if(!chunkPhaseChanged && chunkVal != oldChunkVal) {
-						if(chunkPhase < CHUNKSPERBIT/2)
-							chunkPhase++; // early
-						else
-							chunkPhase--; // late
-						chunkPhaseChanged = true;
-					}
-					oldChunkVal = chunkVal;
-					chunkPhase++;
-					return Promise.resolve().then(callee);
-				});
-
-			return chunkVal;
-		})
-}
-
-function waitForStartBit() {
-	return Promise.resolve()
-		.then(function callee() {	
-			var promise = Promise.resolve()
-
-			.then(demodulator)
-			.then(function callee(bitResult) {
-				if(bitResult == 0 || bitResult == -1)
-					return demodulator().then(callee);
-			})
-		
-			.then(demodulator)
-			.then(function callee(bitResult) {
-				if(bitResult == 1 || bitResult == -1)
-					return demodulator().then(callee);
-			})
-		
-			for(var i = 0; i < CHUNKSPERBIT/2; i++) {
-				promise = promise.then(demodulator)
-			}
-		
-			return promise.then(function(bitResult) {
-				if(bitResult === 0);
-				else return Promise.resolve().then(callee);
-			});
-		})
-}
-
-function run() {
-	return waitForStartBit()
-		.then(function() { return { byte: 0, pointer: 0 }; })
-		.then(function callee(byte) {
-			return getBitDPLL()
-				.then(function(bit) {
-					if(bit == -1) return -1;
-				
-					switch(byte.pointer) {
-					case 5: // stop bit 1
-						break;
-					case 6: // stop bit 2
-						break;
-					default:
-						byte.byte += bit << byte.pointer;
-					}
-
-					if(++byte.pointer < 7)
-						return Promise.resolve(byte).then(callee);
-					return byte.byte;
-				})
-		})
-		.then(function(byte) {
-			if(byte === -1) return;
-			txtResult.value += baudot.char(byte) || '';
-			txtResult.scrollTop = txtResult.scrollHeight;
-		})
-		.then(run);
-}
-
-
-var chunks = [ ];
 var inputResolve = null;
 
-function readChunk() {
-	if(chunks[0] && chunks[0].end === samplesPerChunk) {
-		var chunk = chunks.shift().data;
-		return Promise.resolve(chunk);
+function getSample() {
+	if(0 in samples) {
+		return Promise.resolve(samples.shift());
 	} else {
-		return (new Promise(function(resolve) {
-			inputResolve = resolve;
-		})).then(readChunk);
+		return (new Promise(resolve => { inputResolve = resolve; })).then(getSample);
 	}
 }
 
-window.addEventListener('load', function() {
-	var onaudioprogress = function onaudioprogress(e) {
-		if(chunks.length > 5) return; // buffer overflow
+// for filter designing, see http://www-users.cs.york.ac.uk/~fisher/mkfilter/
+// order 2 Butterworth, freqs: 865-965 Hz
+function bandPassFreq0(sampleIn) {
+	xvBP0[0] = xvBP0[1]; xvBP0[1] = xvBP0[2]; xvBP0[2] = xvBP0[3]; xvBP0[3] = xvBP0[4]; 
+	xvBP0[4] = sampleIn / 2.356080041e+04;
+	yvBP0[0] = yvBP0[1]; yvBP0[1] = yvBP0[2]; yvBP0[2] = yvBP0[3]; yvBP0[3] = yvBP0[4]; 
+	yvBP0[4] = (xvBP0[0] + xvBP0[4]) - 2 * xvBP0[2]
+	         + (-0.9816582826 * yvBP0[0]) + (3.9166274264 * yvBP0[1])
+	         + (-5.8882201843 * yvBP0[2]) + (3.9530488323 * yvBP0[3]);
+	return yvBP0[4];
+}
+
+// order 2 Butterworth, freqs: 1035-1135 Hz
+function bandPassFreq1(sampleIn) {
+	xvBP1[0] = xvBP1[1]; xvBP1[1] = xvBP1[2]; xvBP1[2] = xvBP1[3]; xvBP1[3] = xvBP1[4]; 
+	xvBP1[4] = sampleIn / 2.356080365e+04;
+	yvBP1[0] = yvBP1[1]; yvBP1[1] = yvBP1[2]; yvBP1[2] = yvBP1[3]; yvBP1[3] = yvBP1[4]; 
+	yvBP1[4] = (xvBP1[0] + xvBP1[4]) - 2 * xvBP1[2]
+	         + (-0.9816582826 * yvBP1[0]) + (3.9051693660 * yvBP1[1])
+	         + (-5.8653953990 * yvBP1[2]) + (3.9414842213 * yvBP1[3]);
+	return yvBP1[4];
+}
+
+// order 2 Butterworth, freq: 50 Hz
+function lowPass(sampleIn) {
+	xvLP[0] = xvLP[1]; xvLP[1] = xvLP[2]; 
+	xvLP[2] = sampleIn / 9.381008646e+04;
+	yvLP[0] = yvLP[1]; yvLP[1] = yvLP[2]; 
+	yvLP[2] = (xvLP[0] + xvLP[2]) + 2 * xvLP[1]
+          + (-0.9907866988 * yvLP[0]) + (1.9907440595 * yvLP[1]);
+	return yvLP[2];
+}
+
+async function demodulator() {
+		var sample = await getSample();
 	
+		var line0 = bandPassFreq0(sample),
+		    line1 = bandPassFreq1(sample);
+
+		// calculating the RMS of the two lines (squaring them)
+		line0 *= line0;
+		line1 *= line1;
+
+		// inverting line 1
+		line1 *= -1;
+
+		// summing the two lines
+		line0 += line1;
+
+		// lowpass filtering the summed line
+		line0 = lowPass(line0);
+
+		console.log('after:', line0 > 0 ? 0 : 1)
+		
+
+		if(line0 > 0) return 0;
+		else return 1;
+}
+
+// this function returns at the half of a bit with the bit's value
+async function getBitDPLL() {
+	var phaseChanged = false;
+	var val = 0;
+
+	while(DPLLBitPhase < samplesPerBit) {
+		val = await demodulator();
+
+		if(!phaseChanged && val != DPLLOldVal) {
+			if(DPLLBitPhase < samplesPerBit/2)
+				DPLLBitPhase += samplesPerBit/8; // early
+			else
+				DPLLBitPhase -= samplesPerBit/8; // late
+			phaseChanged = true;
+		}
+		DPLLOldVal = val;
+		DPLLBitPhase++;
+	}
+	DPLLBitPhase -= samplesPerBit;
+
+	return val;
+}
+
+// this function returns only when the start bit is successfully received
+async function waitForStartBit() {
+	var bitResult;
+
+	while(1) {
+		
+		// waiting for a falling edge
+		do {
+			bitResult = await demodulator();
+		} while(bitResult === 0);
+			
+		do {
+			bitResult = await demodulator();
+		} while(bitResult === 1);
+
+		// waiting half bit time
+		for (var i = 0; i < samplesPerBit/2; i++)
+			bitResult = await demodulator();
+
+		if (bitResult == 0)
+			break;
+	}
+}
 	
-		var leftChannel = e.inputBuffer.getChannelData(0);
-		var rightChannel = e.inputBuffer.getChannelData(1);
+async function getByte() {
 
-		var len = chunks.length;
 
-		var index = len && chunks[len-1].end < samplesPerChunk ? len - 1 : len;
+	await waitForStartBit();
 
-		for (var i = 0; i < SAMPLES; i++) {
-			var chunk = chunks[index];
-			if(!chunk) {
-				chunk = {
-					data: new FFTData(samplesPerChunk),
-					end: 0
-				};
-				chunks.push(chunk);
-			}
+	console.log('Got start bit')
 
-			console.assert(chunk.end < samplesPerChunk);
-			chunk.data.real[chunk.end++] = (leftChannel[i] + rightChannel[i]) / 2;
-			if(chunk.end === samplesPerChunk) index++;
+
+	var bitResult, byteResult = 0, byteResultp = 0;
+
+	for(var byteResultp = 1, byteResult = 0; byteResultp < 8; byteResultp++) {
+		bitResult = await getBitDPLL();
+		if(bitResult === -1) {
+			byteResult = -1;
+			break;
+		}
+
+		switch(byteResultp) {
+		case 6: // stop bit 1
+	//		console.log('Stop bit 1');
+			break;
+		case 7: // stop bit 2
+	//		console.log('Stop bit 2');
+			break;
+		default:
+			byteResult += bitResult << (byteResultp - 1)
+		}
+	}
+
+	return byteResult;
+}
+
+async function start() {
+	
+	var media = await navigator.mediaDevices.getUserMedia({ audio: true });
+	
+	var context = new (window.AudioContext || window.webkitAudioContext);
+
+	var audioInput = context.createMediaStreamSource(media);
+
+	var processor = context.createScriptProcessor(SAMPLES, 1, 1);
+
+	processor.onaudioprocess = function(e) {
+		if(SAMPLES in samples) {
+			console.error('Buffer overflow');
+			return; // buffer overflow
+		}
+		
+		var channelData = e.inputBuffer.getChannelData(0);
+
+		for(var i = 0; i < SAMPLES; i++) {
+			samples.push(channelData[i]);
 		}
 
 		console.assert(inputResolve);
 		
-		if (inputResolve) {
+		if(inputResolve) {
 			var resolve = inputResolve;
 			inputResolve = null;
 			resolve();
 		}
 	};
 	
-	if(typeof navigator.getUserMedia === 'undefined' && typeof navigator.webkitGetUserMedia === 'function')
-		navigator.getUserMedia = navigator.webkitGetUserMedia;
-	
-	navigator.getUserMedia({ audio: true }, function(e) {
-		var context = new (window.AudioContext || window.webkitAudioContext);
+	audioInput.connect(processor);
 
-	    var audioInput = context.createMediaStreamSource(e);
+	processor.connect(context.destination);
 
-		var processor = context.createScriptProcessor(SAMPLES, 2, 2);
+	console.log('Sample rate: %d', context.sampleRate)
 
-		processor.onaudioprocess = onaudioprogress;
-	
-	    audioInput.connect(processor);
+	samplesPerBit = Math.round(SAMPLERATE/BPS);
+	console.log("One bit length: " + 1/BPS + " seconds, " + samplesPerBit + " samples");
 
-		processor.connect(context.destination);
-
-		start(context.sampleRate);
+	xvBP0 = [ 0, 0, 0, 0, 0 ];
+	yvBP0 = [ 0, 0, 0, 0, 0 ];
+	xvBP1 = [ 0, 0, 0, 0, 0 ];
+	yvBP1 = [ 0, 0, 0, 0, 0 ];
+	xvLP = [ 0, 0, 0 ];
+	yvLP = [ 0, 0, 0 ];
 		
-	}, function(e) { console.error('Error: ', e); });
+	while(1) {
+
+		var byte = await getByte();
+	
+		txtResult.value += baudot.char(byte) || '';
+		txtResult.scrollTop = txtResult.scrollHeight;
+
+	}
+}
+
+
+// main
+
+// navigator.mediaDevices.getUserMedia polyfill based on example at MDN
+var promisifiedOldGUM = function(constraints, successCallback, errorCallback) {
+
+	var getUserMedia = navigator.getUserMedia || navigator.webkitGetUserMedia || navigator.mozGetUserMedia;
+
+  if(!getUserMedia) {
+		return Promise.reject(new Error('getUserMedia is not implemented in this browser'));
+  }
+
+	return new Promise((successCallback, errorCallback) => {
+		getUserMedia.call(navigator, constraints, successCallback, errorCallback);
+	});
+}
+
+if(!('mediaDevices' in navigator)) {
+	navigator.mediaDevices = { };
+}
+
+if(!('getUserMedia' in navigator.mediaDevices)) {
+  navigator.mediaDevices.getUserMedia = promisifiedOldGUM;
+}
+
+
+window.addEventListener('load', () => {
+	start().then(() => { console.assert(false); }).catch(e => { console.error(e); })
 });
 
