@@ -24,39 +24,26 @@ canvas {
 </head>
 <body>
 	<div class="canvasContainer">
-		<canvas id="original" class="full-width"></canvas>
+		<canvas id="input" class="full-width"></canvas>
+	</div>
+	<div class="canvasContainer" style="position: relative; overflow: hidden; height: 128px">
+		<canvas id="waterfall1" class="full-width" style="position: absolute; left: 0"></canvas>
+		<canvas id="waterfall2" class="full-width" style="position: absolute; left: 0	"></canvas>
 	</div>
 	<div class="canvasContainer">
-		<canvas id="waterfall" class="full-width"></canvas>
-	</div>
-	<div class="canvasContainer">
-		<canvas id="biquad-mark" class="half-width"></canvas>
-		<canvas id="biquad-space" class="half-width"></canvas>
-	</div>
-	<div class="canvasContainer">
-		<canvas id="addition" class="full-width"></canvas>
+		<canvas id="fsk-input" class="full-width"></canvas>
 	</div>
 
-	<div class="canvasContainer">
-		<canvas id="lowpass" class="full-width"></canvas>
-	</div>
-<!--	<div>
+	<div>
 		<form id="conf">
 			cFrq: <input type="number" id="cfrq" style="width: 60px" value="2125" /> shift: <input type="number" id="shift" style="width: 60px" value="170" /> 
 		</form>
 	</div>
 	<div>
-		<textarea id="result" rows="13">
-baud: 45
-center: 1000Hz
-shift: 170 Hz
-bits: 5
-stopbits: 2
-parity: even
-order: LSB first</textarea>
+		<textarea id="result" rows="13"></textarea>
 	</div>
 	<div>
-<textarea id="message"></textarea>-->
+<textarea id="message"></textarea>
 	</div>
 	<script type="text/javascript" src="app.js"></script>
 </body>

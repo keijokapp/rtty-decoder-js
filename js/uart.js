@@ -1,4 +1,4 @@
-
+import { EventEmitter } from 'events';
 
 // encoder
 
@@ -8,14 +8,16 @@ export class UARTTransmitter {
 	 * @constructor
 	 * @param keyer {Keyer} Keyer to be used for transmitting
 	 * @param options {object} Options
-         * @param options.byteSize {number} Number of bits in byte
-         * @param options.bitSize {number} length of bit in keyers time scale
-         * @param options.stopBits {number} Number of stop bits
+   * @param options.byteSize {number} Number of bits in byte
+   * @param options.bitSize {number} Length of bit in keyers time scale
+   * @param options.parityBits {number} Number of parity bits
+   * @param options.stopBits {number} Number of stop bits
 	 */
 	constructor(keyer, options) {
 		this._keyer = keyer;
 		this._byteSize = options.byteSize;
 		this._bitSize = options.bitSize;
+		this._parityBits = options.parityBits;
 		this._stopBits = options.stopBits;
 	}
 
@@ -24,31 +26,48 @@ export class UARTTransmitter {
 	 * @param byte {number} integer byte value
 	 */
 	send(byte) {
-		const standbyTime = .1
+		const standbyTime = .1;
+		const maxParity = (1 << this._parityBits) - 1;
 
 		const bits = [ ];
-		if(this._keyer.currentValue !== -1) {
-			bits.push({ timestamp: 0, value: -1 }) // standby value, high
-		}
 
-		bits.push({ timestamp: standbyTime, value: 1 }) // start bit, low
+		var parity = 0;
+		var time = 0;
 
-		var time = standbyTime + this._bitSize;
-		var mask = 1 << (this._byteSize - 1);
-		while(mask) {
-			if(byte & mask) { // mark
-				bits.push({ timestamp: time, value: -1 })
-			} else { // space
-				bits.push({ timestamp: time, value: 1 })
+//		bits.push({ timestamp: time, value: 1 }) // standby value, high
+//		time += standbyTime;
+
+		bits.push({ timestamp: time, value: -1 });
+		time += this._bitSize;
+
+		console.log('Sending: %s', byte.toString(2));
+
+		// data bits
+		for(let i = 0; i < this._byteSize; i++) {
+			if(byte & 1) {
+				bits.push({ timestamp: time, value: 1 }); // mark, high
+				parity++;
+			} else {
+				bits.push({ timestamp: time, value: -1 }); // space, low
 			}
 			time += this._bitSize;
-			mask >>= 1;
+			byte >>= 1;
 		}
 
-		bits.push({ timestamp: time, value: -1 }); // stop bit, high
-		bits.push({ timestamp: time + this._stopBits * this._bitSize, value: 0 }); // silence
+		// parity bits
+		for(let i = 0; i < this._parityBits; i++) {
+			if(parity & 1) {
+				bits.push({ timestamp: time, value: 1 }); // mark, high
+			} else {
+				bits.push({ timestamp: time, value: -1 }); // space, low
+			}
+			time += this._bitSize;
+			parity >>= 1;
+		}
+		
+		bits.push({ timestamp: time, value: 1 }); // stop bits
 
-		console.log(bits);
+		bits.push({ timestamp: time + this._stopBits * this._bitSize, value: 0 });
 
 		return this._keyer.queue(bits);
 	}
@@ -57,269 +76,188 @@ export class UARTTransmitter {
 
 
 // decoder
-/*
+
+
 const States = {
-	WAIT_HIGH: 0,
-	WAIT_START: 1,
+	WAIT_HIGH: 1,
+	WAIT_START: 2,
+	DECODING: 3
 }
 
-export default class {
 
-	constructor(samplesPerBit, fskInput) {
-		this.fskInput = fskInput;
+export class UARTReceiver extends EventEmitter {
 
-		this._bitLength = 44100 / 10;
-		this._startBitSize = 1 * this._bitLength;
-		this._stopBits = 2;
-		this._bitsPerByte = 5;
-		this._byteSize = this._bitsPerSite * this._bitSize;
-		this._startBitTime = NaN;
-		this._bitTime = NaN;
-		this._state = States.WAIT_HIGH;
-		
-		fskInput.on('change', this._change.bind(this));
-	}
+	/**
+	 * @constructor
+	 * @param dekeyer {Dekeyer} Dekeyer used for receiving
+	 * @param options {object} Options
+   * @param options.byteSize {number} Number of bits in byte
+   * @param options.bitSize {number} Length of bit in keyers time scale
+   * @param options.parityBits {number} Number of parity bits
+   * @param options.stopBits {number} Number of stop bits
+	 */
+	constructor(dekeyer, options) {
+		super();
 
-	_change(value, sample) {
-		if(value === 0) {
+		this._dekeyer = dekeyer;
+		this._byteSize = options.byteSize;
+		this._bitSize = options.bitSize;
+		this._parityBits = options.parityBits;
+		this._stopBits = options.stopBits;
+
+		if(dekeyer.currentValue !== -1) {
 			this._state = States.WAIT_HIGH;
-		} else if(this._states === States.WAIT_HIGH && value === 1) {
-			this._state = States.WAIT_START;
-		} else if(this._state === States.WAIT_START && value === -1) {
-			this.fskInput.on(sample + this.startBitSize / 2 + '', this._checkStartBit.bind(this));
 		} else {
-			this._sync(sample);
+			this._state = States.WAIT_START;
 		}
+
+		this._dekeyer.on('change', this._change.bind(this));
+
 	}
 
-	_checkStartBit(value, sample) {
-		if(value === -1)
-	}
+	_change(value, time, timeStamp) {
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-	_change(value, sample) {
-
-		if(value === 0) {
-			this._state = States.WAIT_HIGH;
-			return;
-		}
+		changes.push({
+			value, time: timeStamp, sample: time
+		});
 		
-		
-
-
 		switch(this._state) {
+		case States.DECODING:
+			break;
 		case States.WAIT_HIGH:
-			if(value === -1) {
+			if(value === 1) { // Got high value
 				this._state = States.WAIT_START;
 			}
 			break;
 		case States.WAIT_START:
-			if(value !== -1) {
-				throw new Error('Unexpected value: ' + value);
-			}
-			
-			// Got start bit
-			this._startBitTime = sample;
-			this._state = States.WAIT_FIRST_BIT;
-			break;
-		case States.WAIT_FIRST_BIT: // same as WAIT_BIT but start bit length dependendent
-			const samplesSinceStartBit = sample - this._startBitTime;
-			const samplesSinceByteStart = samplesSinceStartBit - this._startBitSize;
-
-			if(value === 1 && samplesSinceStartBit < this._startBitSize / 2) {
-					// Start bit ended too early
-					this._state = States.WAIT_START;
-			} else if(samplesSinceByteStart < this._byteSize + this._bitSize / 2) { // bitSize / 2 - include half stop bit for error resistance 
-				const numberOfBits = Math.round(samplesSinceByteStart / this._bitSize);
-//				console.log('Got %d bits with value %d', numberOfBits, value);
-				if(value === 1) {
-					this._byte = (1 << (numberOfBits + 1)) - 1;
-				} else { // value === -1
-					this._byte = 0;
-				}
-				this._state = States.WAIT_BIT;
-			} else if(value !== 1) { // error conditions
+			if(value === -1) { // Got start bit
+				this._state = States.DECODING;
+				this._byteStart = time;
+				this._decode();
+			} else if(value !== 1) {
+				console.log('Reverted to waiting high value')
 				this._state = States.WAIT_HIGH;
-			} else {
-				this._state = States.WAIT_START;
-			}
-			break;
-		case States.WAIT_BIT:
-			const samplesSinceStartBit = sample - this._startBitTime;
-			const samplesSinceByteStart = samplesSinceStartBit - this._startBitSize;
-
-			} else if(value !== 0 && samplesSinceStartBit < this._startBitSize + this._byteSize) {
-				const samplesSinceByteStart = samplesSinceStartBit - this._startBitSize;
-				const numberOfBits = Math.round(samplesSinceByteStart / this._bitSize);
-//				console.log('Got %d bits with value %d', numberOfBits, value);
-				if(value === 1) {
-					this._byte = (1 << (numberOfBits + 1)) - 1;
-				} else { // value === -1
-					this._byte = 0;
-				}
-				this._state = States.WAIT_BIT;
-			} else if(value !== 1) { // error conditions
-				this._state = States.WAIT_HIGH;
-			} else {
-				this._state = States.WAIT_START;
 			}
 			break;
 		}
 	}
 
+	_decode(bitIndex) {
+
+		const ctrlMask = (((1 << this._stopBits) - 1) << (this._byteSize + this._parityBits + 1)) | 1; // mask for start and stop bits
+		const maxParity = (1 << this._parityBits) - 1; // max parity value
+		const parityMask = maxParity << (this._byteSize + 1); // mask for parity bits
+
+		const bitCount = this._byteSize + 1 + this._parityBits + this._stopBits;
+		var error = false;
+		var byteValue = 0;
+		var bitIndex = 0;
+		var parity = 0;
+
+		const callback = value => {
+			if(error) {
+				return;
+			}
+			if(value === 0) {
+				error = true;
+				console.log('ERROR: Got zero value');
+				return;
+			}
+
+			value = value === 1 ? 1 : 0;
+			if(value && bitIndex > 0 && bitIndex <= this._byteSize) parity++;
+
+			byteValue |= value << bitIndex++;
+
+			if(bitIndex >= bitCount) {
+				if((byteValue & ctrlMask) === ctrlMask - 1) {
+					console.log('Start and stop bits OK');
+				} else {
+					console.log('Start and stop bits NOT OK');
+				}
+				if((byteValue & parityMask) >> (this._byteSize + 1) === (parity & maxParity)) {
+					console.log('Parity bits OK');
+				} else {
+					console.log('Parity bits NOT OK: parity bit: %d; byte parity: %d', (byteValue & parityMask) >> (this._byteSize + 1), parity);
+				}
+				byteValue >>= 1;
+				byteValue &= (1 << this._byteSize) - 1;
+
+				console.log('Got byte: %s', byteValue);
+				this._state = this._dekeyer.currentValue !== 1 ? States.WAIT_HIGH : States.WAIT_START;
+			}
+		}
+
+		for(let i = 0; i < bitCount; i++) {
+			const sampleOffset = this._byteStart + i * this._bitSize + this._bitSize / 2;
+			samplings.push({ sample: sampleOffset });
+			this._dekeyer.once('' + sampleOffset, callback);
+		}
+	}
 }
 
-*/
 
-/*	This program is free software: you can redistribute it and/or modify
-    it under the terms of the GNU General Public License as published by
-    the Free Software Foundation, either version 3 of the License, or
-    (at your option) any later version.
+// debug
 
-    This program is distributed in the hope that it will be useful,
-    but WITHOUT ANY WARRANTY; without even the implied warranty of
-    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-    GNU General Public License for more details.
+const changes = [];
+const samplings = [];
 
-    You should have received a copy of the GNU General Public License
-    along with this program.  If not, see <http://www.gnu.org/licenses/>. */
-/*
-package com.nonoo.rttydecoder.iir;
+function draw() {
 
-import java.io.BufferedReader;
-import java.io.ByteArrayInputStream;
-import java.io.ByteArrayOutputStream;
-import java.io.FileOutputStream;
-import java.io.IOException;
-import java.io.InputStreamReader;
+	requestAnimationFrame(draw);
 
-import javax.sound.sampled.AudioFileFormat;
-import javax.sound.sampled.AudioFormat;
-import javax.sound.sampled.AudioInputStream;
-import javax.sound.sampled.AudioSystem;
-import javax.sound.sampled.DataLine;
+	const period = 8000; // in milliseconds
+	const time = performance.now() - period;
 
-	private final static int SAMPLERATE = 48000;
-	private final static int BUFFERSIZE = SAMPLERATE;
-	//private final static int FREQ0 = 915;
-	//private final static int FREQ1 = 1085;
-	private final static double BITSPERSEC = 45.45;
-
-	private int oneBitSampleCount;
-	private int DPLLOldVal = 0;
-	private int DPLLBitPhase = 0;
-
-	// this function returns at the half of a bit with the bit's value
-	public int getBitDPLL() {
-		boolean phaseChanged = false;
-		int val = 0;
-
-		while (DPLLBitPhase < oneBitSampleCount) {
-			val = demodulator();
-
-			if (!phaseChanged && val != DPLLOldVal) {
-				if (DPLLBitPhase < oneBitSampleCount/2)
-					DPLLBitPhase += oneBitSampleCount/8; // early
-				else
-					DPLLBitPhase -= oneBitSampleCount/8; // late
-				phaseChanged = true;
-			}
-			DPLLOldVal = val;
-			DPLLBitPhase++;
-		}
-		DPLLBitPhase -= oneBitSampleCount;
-
-		return val;
-	}
-
-	// this function returns only when the start bit is successfully received
-	public void waitForStartBit() {
-		int bitResult;
-
-		while (!Thread.interrupted()) {
-			// waiting for a falling edge
-			do {
-				bitResult = demodulator();
-			} while (bitResult == 0 && !Thread.interrupted());
-			
-			do {
-				bitResult = demodulator();
-			} while (bitResult == 1 && !Thread.interrupted());
-
-			// waiting half bit time
-			for (int i = 0; i < oneBitSampleCount/2; i++)
-				bitResult = demodulator();
-
-			if (bitResult == 0)
-				break;
-		}
+	const e = document.getElementById('fsk-input');
+	const ctx = e.getContext('2d');
+	ctx.strokeStyle = 'blue';
+	
+	while(changes[1] && changes[1].time < time - period) {
+		changes.shift();
 	}
 	
-	@Override
-	public void run() {
-		tdl.start();
+	var changeIndex = 0;
+	var currentValue = 0;
+	var nextChange = changes[changeIndex];
+	
+	ctx.clearRect(0, 0, e.width, e.height);
 
-		int byteResult = 0;
-		int byteResultp = 0;
-		int bitResult;
-		
-		while (!Thread.interrupted()) {
-			waitForStartBit();
-
-			System.out.print("0 "); // first bit is the start bit, it's zero
-
-			// reading 7 more bits
-			for (byteResultp = 1, byteResult = 0; byteResultp < 8; byteResultp++) {
-				bitResult = getBitDPLL();
-
-				switch (byteResultp) {
-					case 6: // stop bit 1
-						System.out.print(" " + bitResult);
-						break;
-					case 7: // stop bit 2
-						System.out.print(bitResult);
-						break;
-					default:
-						System.out.print(bitResult);
-						byteResult += bitResult << (byteResultp-1);
-				}
-			}
-
-			switch (byteResult) {
-				case 31:
-					mode = RTTYMode.letters;
-					System.out.println(" ^L^");
-					break;
-				case 27:
-					mode = RTTYMode.symbols;
-					System.out.println(" ^F^");
-					break;
-				default:
-					switch (mode) {
-						case letters:
-							System.out.println(" *** " + RTTYLetters[byteResult] + "(" + byteResult + ")");
-							break;
-						case symbols:
-							System.out.println(" *** " + RTTYSymbols[byteResult] + "(" + byteResult + ")");
-							break;
-					}
-			}
+	ctx.beginPath();
+	for(let i = 0; i < e.width; i++) {
+		const timeScale = time + period * i / e.width;
+		while(nextChange && nextChange.time <= timeScale) {
+			currentValue = nextChange.value;
+			nextChange = changes[changeIndex++];
 		}
-
-		tdl.stop();
-		tdl.close();
+		if(currentValue) {
+			ctx.moveTo(i, e.height / 2);
+			ctx.lineTo(i, currentValue > 0 ? 0 : e.height);
+		}
 	}
-*/
+	ctx.stroke();
+	
+	if(changes[0]) {
+		const referenceSample = changes[0].sample;
+		const referenceTime = changes[0].time;
+		const referenceTimeOffset = referenceTime - time;
+		const referenceSampleOffset = referenceTimeOffset * audioCtx.sampleRate / 1000;
+		const firstSample = referenceSample - referenceSampleOffset;
+		const totalSamples = period * audioCtx.sampleRate / 1000;
+
+		ctx.strokeStyle = 'red';
+		ctx.beginPath();		
+		for(const sampling of samplings) {
+			const x = e.width * (sampling.sample - firstSample) / totalSamples;
+			ctx.moveTo(x, 0);	
+			ctx.lineTo(x, e.height);		
+		}
+		ctx.stroke();
+
+		while(samplings[0] && samplings[0].sample < firstSample) {
+			samplings.shift();
+		}
+	}
+}
+draw();
+//setInterval(draw, 1000);
