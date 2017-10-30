@@ -68,10 +68,17 @@ function draw() {
 		const value = (fftArray[Math.round(i)] - min) * coefficient;
 		waterfallImageData.data[4 * x + 0] = value;
 		waterfallImageData.data[4 * x + 1] = value;
-		waterfallImageData.data[4 * x + 2] = value	;
+		waterfallImageData.data[4 * x + 2] = value;
 		waterfallImageData.data[4 * x + 3] = 255;
 	}
-	
+
+	const markFrequencyBin = Math.round((config.afskFrq - config.afskShift / 2) / audioCtx.sampleRate * config.fftSize);
+	const spaceFrequencyBin = Math.round((config.afskFrq + config.afskShift / 2) / audioCtx.sampleRate * config.fftSize);
+	waterfallImageData.data[4 * markFrequencyBin] = 255;
+	waterfallImageData.data[4 * markFrequencyBin + 1] = waterfallImageData[4 * markFrequencyBin + 2] = 0;
+	waterfallImageData.data[4 * spaceFrequencyBin] = 255;
+	waterfallImageData.data[4 * spaceFrequencyBin + 1] = waterfallImageData[4 * spaceFrequencyBin + 2] = 0;
+
 	const y = parseInt(config.waterfallHeight - (pixelOffset % config.waterfallHeight));
 	ctx.putImageData(waterfallImageData, 0, y);
 	ctx.putImageData(waterfallImageData, 0, y + 1);

@@ -7,22 +7,22 @@ import { analyser } from './visualisation';
 // Microphone input node
 var source;
 
-const bitSize = 60 / 60 / 11; // in seconds
+const bitSize = 60 / 45.45 / 7; // in seconds
 const samplesPerBit = parseInt(audioCtx.sampleRate * bitSize / 2) * 2;
 
 const afskKeyer = new AFSKKeyer();
 const afskDekeyer = new AFSKDekeyer();
 const uartTransmitter = new UARTTransmitter(afskKeyer, {
-	byteSize: 8,
-	parityBits: 1,
+	byteSize: 5,
+	parityBits: 0,
 	bitSize: samplesPerBit / audioCtx.sampleRate,
-	stopBits: 2
+	stopBits: 1
 });
 const uartReceiver = new UARTReceiver(afskDekeyer, {
-	byteSize: 8,
-	parityBits: 1,
+	byteSize: 5,
+	parityBits: 0,
 	bitSize: samplesPerBit,
-	stopBits: 2
+	stopBits: 1
 });
 
 function startRx() {

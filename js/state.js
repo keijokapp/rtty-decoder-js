@@ -3,7 +3,7 @@ import { EventEmitter } from 'events';
 const config = {
 	afskOutput: true,
 	afskFrq: 1000,
-	afskShift: 170,
+	afskShift: 500,
 	fftSize: 512,
 	waterfallHeight: 128,
 	waterfallWidth: 1,

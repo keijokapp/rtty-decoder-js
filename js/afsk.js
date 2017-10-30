@@ -232,7 +232,7 @@ function processor(filter, eventEmitter) {
 	var lastValue = NaN;
 	var zeroStart = NaN;
 
-	const lpFilter = lowpassFilter(50 / filter.context.sampleRate, 1);
+	const lpFilter = lowpassFilter(100 / filter.context.sampleRate, 1);
 	const processor = audioCtx.createScriptProcessor(null, 2, 1);
 
 	processor.onaudioprocess = function onaudioprocess(e) {
@@ -293,17 +293,27 @@ export class AFSKDekeyer extends EventEmitter {
 			this.currentValue = value;
 		});
 
-		console.log('Low frequency: %d', config.afskFrq - config.afskShift / 2);
-		console.log('High frequency: %d', config.afskFrq + config.afskShift / 2);
+		var markFilter, spaceFilter;
 
-		const normalizedMark = (config.afskFrq - config.afskShift / 2) / audioCtx.sampleRate;
-		const normalizedSpace = (config.afskFrq + config.afskShift / 2) / audioCtx.sampleRate;
+		function update() {
+			console.log('Low frequency: %d', config.afskFrq - config.afskShift / 2);
+			console.log('High frequency: %d', config.afskFrq + config.afskShift / 2);
 
-		const size = 5 / audioCtx.sampleRate;
-		const gain = 8.7e7;
+			const normalizedMark = (config.afskFrq - config.afskShift / 2) / audioCtx.sampleRate;
+			const normalizedSpace = (config.afskFrq + config.afskShift / 2) / audioCtx.sampleRate;
 
-		const markFilter = bandpassFilter(normalizedMark - size, normalizedMark + size);
-		const spaceFilter = bandpassFilter(normalizedSpace - size, normalizedSpace + size);
+			const size = 5 / audioCtx.sampleRate;
+	//		const gain = 8.7e7;
+	//		const gain = 8.7e4;
+			const gain = 1000;
+
+			markFilter = bandpassFilter(normalizedMark - size, normalizedMark + size);
+			spaceFilter = bandpassFilter(normalizedSpace - size, normalizedSpace + size);
+		}
+
+		events.on('afskFrq', update);
+		events.on('afskShift', update);
+		update();
 
 		this._bandpass = audioCtx.createScriptProcessor(null, 1, 2);
 		this._bandpass.onaudioprocess = function(e) {
