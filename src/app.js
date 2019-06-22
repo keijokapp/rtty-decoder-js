@@ -1,25 +1,29 @@
 'use strict';
 
 import 'babel-regenerator-runtime';
+import drawCanvasService from './services/drawCanvas'
 import Baudot from './Baudot'
 
-const SAMPLES = 512;
+const SAMPLES = 256;
 const SAMPLERATE = 48000;
-const BPS = 45.45;
+const BPS = 45;
 
-var xvBP0, yvBP0, xvBP1, yvBP1, xvLP, yvLP;
-var samplesPerBit;
+const samplesPerBit = Math.round(SAMPLERATE/BPS);
+console.log('One bit length: ' + 1/BPS + ' seconds, ' + samplesPerBit + ' samples');
+
+
 var DPLLOldVal = 0;
 var DPLLBitPhase = 0;
 
 var baudot = new Baudot;
 
-var samples = [];
+var samples = [ ];
 
 var inputResolve = null;
 
 function getSample() {
-	if(0 in samples) {
+	if(typeof samples[0] === 'number') {
+		inputResolve = null;
 		return Promise.resolve(samples.shift());
 	} else {
 		return (new Promise(resolve => { inputResolve = resolve; })).then(getSample);
@@ -28,6 +32,9 @@ function getSample() {
 
 // for filter designing, see http://www-users.cs.york.ac.uk/~fisher/mkfilter/
 // order 2 Butterworth, freqs: 865-965 Hz
+
+var xvBP0 = [ 0, 0, 0, 0, 0 ],
+    yvBP0 = [ 0, 0, 0, 0, 0 ];
 function bandPassFreq0(sampleIn) {
 	xvBP0[0] = xvBP0[1]; xvBP0[1] = xvBP0[2]; xvBP0[2] = xvBP0[3]; xvBP0[3] = xvBP0[4]; 
 	xvBP0[4] = sampleIn / 2.356080041e+04;
@@ -39,6 +46,8 @@ function bandPassFreq0(sampleIn) {
 }
 
 // order 2 Butterworth, freqs: 1035-1135 Hz
+var xvBP1 = [ 0, 0, 0, 0, 0 ],
+    yvBP1 = [ 0, 0, 0, 0, 0 ];
 function bandPassFreq1(sampleIn) {
 	xvBP1[0] = xvBP1[1]; xvBP1[1] = xvBP1[2]; xvBP1[2] = xvBP1[3]; xvBP1[3] = xvBP1[4]; 
 	xvBP1[4] = sampleIn / 2.356080365e+04;
@@ -50,18 +59,20 @@ function bandPassFreq1(sampleIn) {
 }
 
 // order 2 Butterworth, freq: 50 Hz
+var xvLP  = [ 0, 0, 0 ],
+    yvLP  = [ 0, 0, 0 ];
 function lowPass(sampleIn) {
 	xvLP[0] = xvLP[1]; xvLP[1] = xvLP[2]; 
 	xvLP[2] = sampleIn / 9.381008646e+04;
 	yvLP[0] = yvLP[1]; yvLP[1] = yvLP[2]; 
 	yvLP[2] = (xvLP[0] + xvLP[2]) + 2 * xvLP[1]
-          + (-0.9907866988 * yvLP[0]) + (1.9907440595 * yvLP[1]);
+	        + (-0.9907866988 * yvLP[0]) + (1.9907440595 * yvLP[1]);
 	return yvLP[2];
 }
 
 async function demodulator() {
 		var sample = await getSample();
-	
+
 		var line0 = bandPassFreq0(sample),
 		    line1 = bandPassFreq1(sample);
 
@@ -77,9 +88,6 @@ async function demodulator() {
 
 		// lowpass filtering the summed line
 		line0 = lowPass(line0);
-
-		console.log('after:', line0 > 0 ? 0 : 1)
-		
 
 		if(line0 > 0) return 0;
 		else return 1;
@@ -115,51 +123,52 @@ async function waitForStartBit() {
 	while(1) {
 		
 		// waiting for a falling edge
-		do {
-			bitResult = await demodulator();
-		} while(bitResult === 0);
-			
-		do {
-			bitResult = await demodulator();
-		} while(bitResult === 1);
+//		console.log('waiting for 1')
+		while(await demodulator() === 0);
 
+//		console.log('waiting for 0')			
+		while(await demodulator() === 1);
+
+//		console.log('waiting half bit');
+		
 		// waiting half bit time
-		for (var i = 0; i < samplesPerBit/2; i++)
+		for(var i = 0; i < samplesPerBit / 2; i++)
 			bitResult = await demodulator();
 
-		if (bitResult == 0)
+		if(bitResult == 0)
 			break;
 	}
 }
 	
 async function getByte() {
 
-
 	await waitForStartBit();
 
-	console.log('Got start bit')
+//	console.log(samples.length);
+//	console.log('Got start bit')
 
+	var byteResult = 0;
 
-	var bitResult, byteResult = 0, byteResultp = 0;
-
-	for(var byteResultp = 1, byteResult = 0; byteResultp < 8; byteResultp++) {
-		bitResult = await getBitDPLL();
+	for(var byteResultp = 0; byteResultp < 7; byteResultp++) {
+		var bitResult = await getBitDPLL();
 		if(bitResult === -1) {
 			byteResult = -1;
 			break;
 		}
 
 		switch(byteResultp) {
-		case 6: // stop bit 1
+//		case 6: // stop bit 1
 	//		console.log('Stop bit 1');
-			break;
-		case 7: // stop bit 2
+//			break;
+//		case 7: // stop bit 2
 	//		console.log('Stop bit 2');
-			break;
+	//		break;
 		default:
-			byteResult += bitResult << (byteResultp - 1)
+			byteResult |= bitResult << byteResultp
 		}
 	}
+
+//	console.log(byteResult.toString(2))
 
 	return byteResult;
 }
@@ -175,7 +184,7 @@ async function start() {
 	var processor = context.createScriptProcessor(SAMPLES, 1, 1);
 
 	processor.onaudioprocess = function(e) {
-		if(SAMPLES in samples) {
+		if(typeof samples[0] !== 'undefined') {
 			console.error('Buffer overflow');
 			return; // buffer overflow
 		}
@@ -185,39 +194,36 @@ async function start() {
 		for(var i = 0; i < SAMPLES; i++) {
 			samples.push(channelData[i]);
 		}
-
-		console.assert(inputResolve);
 		
-		if(inputResolve) {
-			var resolve = inputResolve;
-			inputResolve = null;
-			resolve();
-		}
+		console.log(samples.length);
+		
+	//	drawCanvasService(document.getElementById('original'), samples);
+
+		var resolve = inputResolve;
+		inputResolve = null;
+		resolve();
 	};
 	
+	// some routing
 	audioInput.connect(processor);
-
 	processor.connect(context.destination);
 
 	console.log('Sample rate: %d', context.sampleRate)
-
-	samplesPerBit = Math.round(SAMPLERATE/BPS);
-	console.log("One bit length: " + 1/BPS + " seconds, " + samplesPerBit + " samples");
-
-	xvBP0 = [ 0, 0, 0, 0, 0 ];
-	yvBP0 = [ 0, 0, 0, 0, 0 ];
-	xvBP1 = [ 0, 0, 0, 0, 0 ];
-	yvBP1 = [ 0, 0, 0, 0, 0 ];
-	xvLP = [ 0, 0, 0 ];
-	yvLP = [ 0, 0, 0 ];
-		
+	
+	
+	var prev = -1;
 	while(1) {
-
-		var byte = await getByte();
+		var demod = await demodulator();
+		/*
+		if(prev !== demod) {
+			prev = demod;
+	//		console.log(demod);
+		}*/
+	
+/*		var byte = await getByte();
 	
 		txtResult.value += baudot.char(byte) || '';
-		txtResult.scrollTop = txtResult.scrollHeight;
-
+		txtResult.scrollTop = txtResult.scrollHeight;*/
 	}
 }
 
